@@ -2,6 +2,9 @@ package dev.asdevs.signalr_flutter
 
 import android.os.Handler
 import android.os.Looper
+import com.google.gson.JsonArray
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import microsoft.aspnet.signalr.client.ConnectionState
@@ -59,9 +62,10 @@ class SignalrFlutterPlugin : FlutterPlugin, SignalrApi.SignalRHostApi {
             connectionOptions.hubMethods?.forEach { methodName ->
                 hub.on(methodName, { res ->
                     Handler(Looper.getMainLooper()).post {
-                        signalrApi.onNewMessage(methodName, res) { }
+                        val result = res.toString()
+                        signalrApi.onNewMessage(methodName, result) { }
                     }
-                }, String::class.java)
+                }, JsonElement::class.java)
             }
 
             connection.connected {
@@ -178,12 +182,14 @@ class SignalrFlutterPlugin : FlutterPlugin, SignalrApi.SignalRHostApi {
         result: SignalrApi.Result<String>?
     ) {
         try {
-            val res: SignalRFuture<String> =
-                hub.invoke(String::class.java, methodName, *arguments.toTypedArray())
+            val res: SignalRFuture<JsonElement> =
+                hub.invoke(JsonElement::class.java, methodName, *arguments.toTypedArray())
 
-            res.done { msg: String? ->
+            res.done {
+                    msg: JsonElement? ->
                 Handler(Looper.getMainLooper()).post {
-                    result?.success(msg ?: "")
+                    val obj = msg;
+                    result?.success(msg.toString() ?: "")
                 }
             }
 

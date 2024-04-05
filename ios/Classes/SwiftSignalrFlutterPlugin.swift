@@ -50,7 +50,10 @@ public class SwiftSignalrFlutterPlugin: NSObject, FlutterPlugin, FLTSignalRHostA
     if let hubMethods = connectionOptions.hubMethods, !hubMethods.isEmpty {
       hubMethods.forEach { (methodName) in
         hub.on(methodName) { (args) in
-          SwiftSignalrFlutterPlugin.signalrApi?.onNewMessageHubName(methodName, message: args?[0] as? String ?? "", completion: { error in })
+    
+            let jsonData = try? JSONSerialization.data(withJSONObject: args, options: [])
+            let jsonString = String(data: jsonData!, encoding: .utf8)
+            SwiftSignalrFlutterPlugin.signalrApi?.onNewMessageHubName(methodName, message: jsonString ?? "", completion: { error in })
         }
       }
     }
@@ -148,7 +151,12 @@ public class SwiftSignalrFlutterPlugin: NSObject, FlutterPlugin, FLTSignalRHostA
           if let error = error {
             completion(nil, FlutterError(code: "platform-error", message: String(describing: error), details: nil))
           } else {
-            completion(res as? String ?? "", nil)
+              let jsonData = try? JSONSerialization.data(withJSONObject: res!, options: [])
+              if jsonData == nil {
+                  completion(nil, FlutterError(code: "platform-error", message: "Response parse error", details: nil))
+              }
+            let jsonString = String(data: jsonData!, encoding: .utf8)
+            completion(jsonString ?? "", nil)
           }
         })
       } else {
