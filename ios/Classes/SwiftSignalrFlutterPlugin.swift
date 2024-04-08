@@ -144,6 +144,19 @@ public class SwiftSignalrFlutterPlugin: NSObject, FlutterPlugin, FLTSignalRHostA
     }
   }
 
+    func tryToGetJsonData(input: Any) -> Data? {
+        if (!JSONSerialization.isValidJSONObject(input)) {
+            return nil;
+        }
+        
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: input, options: [])
+            return jsonData
+        } catch {
+            return nil
+        }
+    }
+    
   public func invokeMethodMethodName(_ methodName: String, arguments: [String], completion: @escaping (String?, FlutterError?) -> Void) {
     do {
       if let hub = self.hub {
@@ -151,12 +164,15 @@ public class SwiftSignalrFlutterPlugin: NSObject, FlutterPlugin, FLTSignalRHostA
           if let error = error {
             completion(nil, FlutterError(code: "platform-error", message: String(describing: error), details: nil))
           } else {
-              let jsonData = try? JSONSerialization.data(withJSONObject: res!, options: [])
+              let jsonData = self.tryToGetJsonData(input: res!)
+              
               if jsonData == nil {
-                  completion(nil, FlutterError(code: "platform-error", message: "Response parse error", details: nil))
+                  let intResult = res as! Int;
+                  completion(String(intResult), nil)
+              } else {
+                  let jsonString = String(data: jsonData!, encoding: .utf8)
+                  completion(jsonString ?? "", nil)
               }
-            let jsonString = String(data: jsonData!, encoding: .utf8)
-            completion(jsonString ?? "", nil)
           }
         })
       } else {
