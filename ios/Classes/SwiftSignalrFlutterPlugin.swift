@@ -145,16 +145,13 @@ public class SwiftSignalrFlutterPlugin: NSObject, FlutterPlugin, FLTSignalRHostA
     }
 
     func tryToGetJsonData(input: Any?) -> Data? {
-        if input == nil {
+        guard let input = input else {
             return nil
         }
-        
-        if let input = input {
-            if !JSONSerialization.isValidJSONObject(input) {
-                return nil
-            }
-        }
   
+        if !JSONSerialization.isValidJSONObject(input) {
+            return nil
+        }
 
         do {
             let jsonData = try JSONSerialization.data(withJSONObject: input, options: [])
