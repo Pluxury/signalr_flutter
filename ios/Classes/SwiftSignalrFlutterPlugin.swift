@@ -2,153 +2,160 @@ import Flutter
 import UIKit
 
 public class SwiftSignalrFlutterPlugin: NSObject, FlutterPlugin, FLTSignalRHostApi {
-  private static var signalrApi : FLTSignalRPlatformApi?
+    private static var signalrApi: FLTSignalRPlatformApi?
 
-  private var hub: Hub!
-  private var connection: SignalR!
+    private var hub: Hub!
+    private var connection: SignalR!
 
-  public static func register(with registrar: FlutterPluginRegistrar) {
-    let messenger : FlutterBinaryMessenger = registrar.messenger()
-    let api : FLTSignalRHostApi & NSObjectProtocol = SwiftSignalrFlutterPlugin.init()
-    FLTSignalRHostApiSetup(messenger, api)
-    signalrApi = FLTSignalRPlatformApi.init(binaryMessenger: messenger)
-  }
-
-  public func detachFromEngine(for registrar: FlutterPluginRegistrar) {
-    let messenger : FlutterBinaryMessenger = registrar.messenger()
-    FLTSignalRHostApiSetup(messenger, nil)
-    SwiftSignalrFlutterPlugin.signalrApi = nil
-  }
-
-  public func connect(_ connectionOptions: FLTConnectionOptions, completion: @escaping (String?, FlutterError?) -> Void) {
-    connection = SignalR(connectionOptions.baseUrl ?? "")
-
-    if let queryString = connectionOptions.queryString, !queryString.isEmpty {
-      let qs = queryString.components(separatedBy: "=")
-      connection.queryString = [qs[0]:qs[1]]
+    public static func register(with registrar: FlutterPluginRegistrar) {
+        let messenger: FlutterBinaryMessenger = registrar.messenger()
+        let api: FLTSignalRHostApi & NSObjectProtocol = SwiftSignalrFlutterPlugin()
+        FLTSignalRHostApiSetup(messenger, api)
+        signalrApi = FLTSignalRPlatformApi(binaryMessenger: messenger)
     }
 
-    switch connectionOptions.transport {
-    case .longPolling:
-      connection.transport = Transport.longPolling
-    case .serverSentEvents:
-      connection.transport = Transport.serverSentEvents
-    case .auto:
-      connection.transport = Transport.auto
-    @unknown default:
-      break
+    public func detachFromEngine(for registrar: FlutterPluginRegistrar) {
+        let messenger: FlutterBinaryMessenger = registrar.messenger()
+        FLTSignalRHostApiSetup(messenger, nil)
+        SwiftSignalrFlutterPlugin.signalrApi = nil
     }
 
-    if let headers = connectionOptions.headers, !headers.isEmpty {
-      connection.headers = headers
-    }
+    public func connect(_ connectionOptions: FLTConnectionOptions, completion: @escaping (String?, FlutterError?) -> Void) {
+        connection = SignalR(connectionOptions.baseUrl ?? "")
 
-    if let hubName = connectionOptions.hubName {
-      hub = connection.createHubProxy(hubName)
-    }
-
-    if let hubMethods = connectionOptions.hubMethods, !hubMethods.isEmpty {
-      hubMethods.forEach { (methodName) in
-        hub.on(methodName) { (args) in
-    
-            let jsonData = try? JSONSerialization.data(withJSONObject: args, options: [])
-            let jsonString = String(data: jsonData!, encoding: .utf8)
-            SwiftSignalrFlutterPlugin.signalrApi?.onNewMessageHubName(methodName, message: jsonString ?? "", completion: { error in })
+        if let queryString = connectionOptions.queryString, !queryString.isEmpty {
+            let qs = queryString.components(separatedBy: "=")
+            connection.queryString = [qs[0]: qs[1]]
         }
-      }
+
+        switch connectionOptions.transport {
+        case .longPolling:
+            connection.transport = Transport.longPolling
+        case .serverSentEvents:
+            connection.transport = Transport.serverSentEvents
+        case .auto:
+            connection.transport = Transport.auto
+        @unknown default:
+            break
+        }
+
+        if let headers = connectionOptions.headers, !headers.isEmpty {
+            connection.headers = headers
+        }
+
+        if let hubName = connectionOptions.hubName {
+            hub = connection.createHubProxy(hubName)
+        }
+
+        if let hubMethods = connectionOptions.hubMethods, !hubMethods.isEmpty {
+            for methodName in hubMethods {
+                hub.on(methodName) { args in
+
+                    let jsonData = try? JSONSerialization.data(withJSONObject: args, options: [])
+                    let jsonString = String(data: jsonData!, encoding: .utf8)
+                    SwiftSignalrFlutterPlugin.signalrApi?.onNewMessageHubName(methodName, message: jsonString ?? "", completion: { _ in })
+                }
+            }
+        }
+
+        connection.starting = {
+            let statusChangeResult = FLTStatusChangeResult()
+            statusChangeResult.connectionId = nil
+            statusChangeResult.status = FLTConnectionStatus.connecting
+            SwiftSignalrFlutterPlugin.signalrApi?.onStatusChange(statusChangeResult, completion: { _ in })
+        }
+
+        connection.reconnecting = {
+            let statusChangeResult = FLTStatusChangeResult()
+            statusChangeResult.connectionId = nil
+            statusChangeResult.status = FLTConnectionStatus.reconnecting
+            SwiftSignalrFlutterPlugin.signalrApi?.onStatusChange(statusChangeResult, completion: { _ in })
+        }
+
+        connection.connected = { [weak self] in
+            let statusChangeResult = FLTStatusChangeResult()
+            statusChangeResult.connectionId = self?.connection.connectionID
+            statusChangeResult.status = FLTConnectionStatus.connected
+            SwiftSignalrFlutterPlugin.signalrApi?.onStatusChange(statusChangeResult, completion: { _ in })
+        }
+
+        connection.reconnected = { [weak self] in
+            let statusChangeResult = FLTStatusChangeResult()
+            statusChangeResult.connectionId = self?.connection.connectionID
+            statusChangeResult.status = FLTConnectionStatus.connected
+            SwiftSignalrFlutterPlugin.signalrApi?.onStatusChange(statusChangeResult, completion: { _ in })
+        }
+
+        connection.disconnected = { [weak self] in
+            let statusChangeResult = FLTStatusChangeResult()
+            statusChangeResult.connectionId = self?.connection.connectionID
+            statusChangeResult.status = FLTConnectionStatus.disconnected
+            SwiftSignalrFlutterPlugin.signalrApi?.onStatusChange(statusChangeResult, completion: { _ in })
+        }
+
+        connection.connectionSlow = { [weak self] in
+            print("Connection slow...")
+            let statusChangeResult = FLTStatusChangeResult()
+            statusChangeResult.connectionId = self?.connection.connectionID
+            statusChangeResult.status = FLTConnectionStatus.connectionSlow
+            SwiftSignalrFlutterPlugin.signalrApi?.onStatusChange(statusChangeResult, completion: { _ in })
+        }
+
+        connection.error = { error in
+            print("SignalR Error: \(error ?? [:])")
+            let statusChangeResult = FLTStatusChangeResult()
+            statusChangeResult.connectionId = nil
+            statusChangeResult.status = FLTConnectionStatus.connectionError
+            statusChangeResult.errorMessage = error?.description
+            SwiftSignalrFlutterPlugin.signalrApi?.onStatusChange(statusChangeResult, completion: { _ in })
+        }
+
+        connection.start()
+        completion(connection.connectionID ?? "", nil)
     }
 
-    connection.starting = {
-      let statusChangeResult : FLTStatusChangeResult = FLTStatusChangeResult.init()
-      statusChangeResult.connectionId = nil
-      statusChangeResult.status = FLTConnectionStatus.connecting
-      SwiftSignalrFlutterPlugin.signalrApi?.onStatusChange(statusChangeResult, completion: { error in })
+    public func reconnect(completion: @escaping (String?, FlutterError?) -> Void) {
+        if let connection = connection {
+            connection.start()
+            completion(self.connection.connectionID ?? "", nil)
+        } else {
+            completion(nil, FlutterError(code: "platform-error", message: "SignalR Connection not found or null", details: "Start SignalR connection first"))
+        }
     }
 
-    connection.reconnecting = {
-      let statusChangeResult : FLTStatusChangeResult = FLTStatusChangeResult.init()
-      statusChangeResult.connectionId = nil
-      statusChangeResult.status = FLTConnectionStatus.reconnecting
-      SwiftSignalrFlutterPlugin.signalrApi?.onStatusChange(statusChangeResult, completion: { error in })
+    public func stop(completion: @escaping (FlutterError?) -> Void) {
+        if let connection = connection {
+            connection.stop()
+        } else {
+            completion(FlutterError(code: "platform-error", message: "SignalR Connection not found or null", details: "Start SignalR connection first"))
+        }
     }
 
-    connection.connected = { [weak self] in
-      let statusChangeResult : FLTStatusChangeResult = FLTStatusChangeResult.init()
-      statusChangeResult.connectionId = self?.connection.connectionID
-      statusChangeResult.status = FLTConnectionStatus.connected
-      SwiftSignalrFlutterPlugin.signalrApi?.onStatusChange(statusChangeResult, completion: { error in })
+    public func isConnected(completion: @escaping (NSNumber?, FlutterError?) -> Void) {
+        if let connection = connection {
+            switch connection.state {
+            case .connected:
+                completion(true, nil)
+            default:
+                completion(false, nil)
+            }
+        } else {
+            completion(false, nil)
+        }
     }
 
-    connection.reconnected = { [weak self] in
-      let statusChangeResult : FLTStatusChangeResult = FLTStatusChangeResult.init()
-      statusChangeResult.connectionId = self?.connection.connectionID
-      statusChangeResult.status = FLTConnectionStatus.connected
-      SwiftSignalrFlutterPlugin.signalrApi?.onStatusChange(statusChangeResult, completion: { error in })
-    }
-
-    connection.disconnected = { [weak self] in
-      let statusChangeResult : FLTStatusChangeResult = FLTStatusChangeResult.init()
-      statusChangeResult.connectionId = self?.connection.connectionID
-      statusChangeResult.status = FLTConnectionStatus.disconnected
-      SwiftSignalrFlutterPlugin.signalrApi?.onStatusChange(statusChangeResult, completion: { error in })
-    }
-
-    connection.connectionSlow = { [weak self] in
-      print("Connection slow...")
-      let statusChangeResult : FLTStatusChangeResult = FLTStatusChangeResult.init()
-      statusChangeResult.connectionId = self?.connection.connectionID
-      statusChangeResult.status = FLTConnectionStatus.connectionSlow
-      SwiftSignalrFlutterPlugin.signalrApi?.onStatusChange(statusChangeResult, completion: { error in })
-    }
-
-    connection.error = { error in
-      print("SignalR Error: \(error ?? [:])")
-      let statusChangeResult : FLTStatusChangeResult = FLTStatusChangeResult.init()
-      statusChangeResult.connectionId = nil
-      statusChangeResult.status = FLTConnectionStatus.connectionError
-      statusChangeResult.errorMessage = error?.description
-      SwiftSignalrFlutterPlugin.signalrApi?.onStatusChange(statusChangeResult, completion: { error in })
-    }
-
-    connection.start()
-    completion(self.connection.connectionID ?? "", nil)
-  }
-
-  public func reconnect(completion: @escaping (String?, FlutterError?) -> Void) {
-    if let connection = self.connection {
-      connection.start()
-      completion(self.connection.connectionID ?? "", nil)
-    } else {
-      completion(nil, FlutterError(code: "platform-error", message: "SignalR Connection not found or null", details: "Start SignalR connection first"))
-    }
-  }
-
-  public func stop(completion: @escaping (FlutterError?) -> Void) {
-    if let connection = self.connection {
-      connection.stop()
-    } else {
-      completion(FlutterError(code: "platform-error", message: "SignalR Connection not found or null", details: "Start SignalR connection first"))
-    }
-  }
-
-  public func isConnected(completion: @escaping (NSNumber?, FlutterError?) -> Void) {
-    if let connection = self.connection {
-      switch connection.state {
-      case .connected:
-        completion(true, nil)
-      default:
-        completion(false, nil)
-      }
-    } else {
-      completion(false, nil)
-    }
-  }
-
-    func tryToGetJsonData(input: Any) -> Data? {
-        if (!JSONSerialization.isValidJSONObject(input)) {
-            return nil;
+    func tryToGetJsonData(input: Any?) -> Data? {
+        if input == nil {
+            return nil
         }
         
+        if let input = input {
+            if !JSONSerialization.isValidJSONObject(input) {
+                return nil
+            }
+        }
+  
+
         do {
             let jsonData = try JSONSerialization.data(withJSONObject: input, options: [])
             return jsonData
@@ -156,30 +163,34 @@ public class SwiftSignalrFlutterPlugin: NSObject, FlutterPlugin, FLTSignalRHostA
             return nil
         }
     }
-    
-  public func invokeMethodMethodName(_ methodName: String, arguments: [String], completion: @escaping (String?, FlutterError?) -> Void) {
-    do {
-      if let hub = self.hub {
-        try hub.invoke(methodName, arguments: arguments, callback: { (res, error) in
-          if let error = error {
-            completion(nil, FlutterError(code: "platform-error", message: String(describing: error), details: nil))
-          } else {
-              let jsonData = self.tryToGetJsonData(input: res!)
-              
-              if jsonData == nil {
-                  let intResult = res as! Int;
-                  completion(String(intResult), nil)
-              } else {
-                  let jsonString = String(data: jsonData!, encoding: .utf8)
-                  completion(jsonString ?? "", nil)
-              }
-          }
-        })
-      } else {
-        throw NSError.init(domain: "NullPointerException", code: 0, userInfo: [NSLocalizedDescriptionKey : "Hub is null. Initiate a connection first."])
-      }
-    } catch {
-      completion(nil ,FlutterError.init(code: "platform-error", message: error.localizedDescription, details: nil))
+
+    public func invokeMethodMethodName(_ methodName: String, arguments: [String], completion: @escaping (String?, FlutterError?) -> Void) {
+        do {
+            if let hub = hub {
+                try hub.invoke(methodName, arguments: arguments, callback: { res, error in
+                    if let error = error {
+                        completion(nil, FlutterError(code: "platform-error", message: String(describing: error), details: nil))
+                    } else {
+                        let jsonData = self.tryToGetJsonData(input: res)
+
+                        if jsonData == nil {
+                            if res != nil {
+                                let intResult = res as! Int
+                                completion(String(intResult), nil)
+                            } else {
+                                completion("", nil)
+                            }
+                        } else {
+                            let jsonString = String(data: jsonData!, encoding: .utf8)
+                            completion(jsonString ?? "", nil)
+                        }
+                    }
+                })
+            } else {
+                throw NSError(domain: "NullPointerException", code: 0, userInfo: [NSLocalizedDescriptionKey: "Hub is null. Initiate a connection first."])
+            }
+        } catch {
+            completion(nil, FlutterError(code: "platform-error", message: error.localizedDescription, details: nil))
+        }
     }
-  }
 }
